@@ -1,0 +1,680 @@
+<html>
+	<head>
+		<script>
+			var iOS = !!navigator.platform && /iPad|iPhone|iPod/.test(navigator.platform);
+			if(iOS == true){
+				window.location = "ios_version.html";
+			}
+		</script>
+		<script src="https://aframe.io/releases/0.8.0/aframe.min.js"></script>
+		
+		<!-- Custom Addition to triggers event(s) when markers appea, Line 8353 -->
+		<script src="custom-aframe-ar.js"></script>
+		<script
+			src="https://code.jquery.com/jquery-3.2.1.min.js"
+			integrity="sha256-hwg4gsxgFZhOsEEamdOYGBf13FyQuiTwlAQgxVSNgt4="
+			crossorigin="anonymous">
+		</script>
+
+		<!-- Pretty PopUps used in 2017 share function -->
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/sweetalert/1.1.3/sweetalert.min.js"></script>
+		<link href="https://cdnjs.cloudflare.com/ajax/libs/sweetalert/1.1.3/sweetalert.min.css" rel="stylesheet">
+		
+		<!-- Easy text in aframe -->
+		<script src="https://unpkg.com/aframe-text-geometry-component@0.5.1/dist/aframe-text-geometry-component.min.js"></script> 
+		
+		<!-- Custom Aframe Component for Volumetric Video -->
+		<script src="volu-vid-component.js"></script>
+
+		<!-- Font Awesome Glyphs -->			
+
+		<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.0.13/css/all.css" integrity="sha384-DNOHZ68U8hZfKXOrtjWvjxusGo9WQnrNx2sqG0tfsghAvtVlRW3tvkXWZh58N9jp" crossorigin="anonymous">
+		<!-- Cartoon Font -->
+		<link href="https://fonts.googleapis.com/css?family=Roboto|Roboto+Condensed" rel="stylesheet">
+				
+	     <!-- RGBD shaders -->	    
+	    <script id="vs" type="x-shader/x-vertex">
+	      vec3 rgb2hsl( vec3 color ) {
+	        float h = 0.0;
+	        float s = 0.0;
+	        float l = 0.0;
+	        float r = color.r;
+	        float g = color.g;
+	        float b = color.b;
+	        float cMin = min( r, min( g, b ) );
+	        float cMax = max( r, max( g, b ) );
+	        l =  ( cMax + cMin ) / 2.0;
+	        if ( cMax > cMin ) {
+	          float cDelta = cMax - cMin; 
+	          // saturation
+	          if ( l < 0.5 ) {
+	            s = cDelta / ( cMax + cMin );
+	          } else {
+	            s = cDelta / ( 2.0 - ( cMax + cMin ) );
+	          }
+	          // hue
+	          if ( r == cMax ) {
+	            h = ( g - b ) / cDelta;
+	          } else if ( g == cMax ) {
+	            h = 2.0 + ( b - r ) / cDelta;
+	          } else {
+	            h = 4.0 + ( r - g ) / cDelta;
+	          }
+	          if ( h < 0.0) {
+	            h += 6.0;
+	          }
+	          h = h / 6.0;
+	        }
+	        return vec3( h, s, l );
+	      }
+	      uniform float mindepth;
+	      uniform float maxdepth;
+	      uniform float imageWidth;
+	      uniform float imageHeight;
+	      uniform float focalX;
+	      uniform float focalY;
+	      uniform float principleX;
+	      uniform float principleY;
+	      uniform sampler2D map;
+	      varying float visibility;
+	      varying vec2 vUv;
+	      // projection formula
+	      vec3 xyz( float x , float y, float depth ) {
+	        float z = depth * ( maxdepth - mindepth ) + mindepth;
+	        return vec3(
+	       // The shader as it is written operates on a scale that seems about
+	       // 100x larger than units in AFRAME
+	       // Scale hack,
+	               0.01 * ((x - principleX)  * z / focalX) ,
+	               0.01 * ((y - principleY) * z / focalY),
+	               0.01 * (-z) );
+	      }
+	      void main() {
+	        vUv = vec2 (position.x/imageWidth, position.y/imageHeight);
+	        vUv.y = vUv.y * 0.5;// + 0.5;
+	        vec3 hsl = rgb2hsl( texture2D( map, vUv ).xyz );
+	        vec4 pos = vec4( xyz( position.x, position.y, hsl.x ), 5.0 );
+	        // Positioning the cloud
+	        // pos.x -= 07.0; Puts the base of the video in the right spot for rotated DepthKit video
+	        pos.z += 000.0;
+	        pos.y += 00.0;
+	        pos.x -= 07.0;
+	        visibility = hsl.z * 2.0;
+	        gl_PointSize = 6.0;
+	        gl_Position = projectionMatrix * modelViewMatrix * pos;
+	      }
+	    </script>
+	
+	    <script id="fs" type="x-shader/x-fragment">
+	      uniform sampler2D map;
+	      uniform float opacity;
+	      varying float visibility;
+	      varying vec2 vUv;
+	      void main() {
+	        if ( visibility < 0.75 ) discard;
+	        vec4 color = texture2D( map, vUv + vec2(0.0, 0.5) );
+	        color.w = opacity;
+	        gl_FragColor = color;
+	      }
+	    </script>
+		
+	</head>
+
+	<style>
+		picker{
+			color:#92c1fb;
+		}
+		
+		a{
+			color:#fff;
+			text-decoration: none;
+		}
+		a:hover{
+			color:#eee;
+		}
+		
+		body{
+		color:#000;	
+		font-family: 'roboto condensed' , sans-serif;
+		}
+		
+		
+		.active{
+			font-size: 1vh;
+			color: #fff;			
+			margin:1px;
+		}		
+		
+		.inactive{
+			color:rgba(255,255,255, 0.3);
+			font-size: 1vh;
+			margin:1vh;
+			}
+		
+		.dontUse{
+			pointer-events: none;
+			opacity: .3;
+		}
+		
+		.use{
+			pointer-events: auto;
+			opacity: 1;
+		}
+		
+		
+		.bubble
+		{
+		position: relative;
+		background: rgba(0,0,0, 0.8);
+		width:105%;
+		color: #fff;
+		bottom:0px;
+		left:0px;
+		padding-bottom: 10px;
+		}
+
+		.drag
+		{
+		position: relative;
+		background: rgba(100,0,0, 0.0);
+		width:105%;
+		color: #fff;
+		top:0px;
+		left:0px;
+		padding-bottom: 1900px;
+		}
+
+		.alignleft {
+		  float: left;
+		  width:10%;
+		  text-align:left;
+		  margin: 0px;
+		  padding: 0px;
+		  font-size:6vh;
+		}
+		.aligncenter {
+		  float: left;
+		  width:80%;
+		  text-align:center;
+		  margin: 0px;
+		  padding: 0px;
+		}
+		.alignright {
+		 float: left;
+		 width:10%;
+		 text-align:right;
+		 margin: 0px;
+		 padding: 0px;
+		 font-size:6vh ;
+		}​	
+	</style>
+
+	<body>
+		
+
+		<!-- UI Block -->
+		<div style="z-index:100; position:absolute;  pointer-events: none; position:fixed; height:100%; top:0px; width:96%; left:0px; font-size:2vh;">
+		
+
+<div id="data2" style="display:none;" ></div>
+<div id="data" style="display:none;" ></div>
+
+			
+			
+			<div id="galleryUI" style=" display:none; text-align: center; ">
+				<div style="  position:absolute; pointer-events: auto; width:100%; padding:0px;">			
+
+				</div>	
+	
+				<div  class="drag" style="position:absolute; pointer-events: auto;"></div>
+					
+				<div  class="bubble" style="position:absolute; pointer-events: auto;">
+
+					<div id="progress" style="text-align:center; margin-top: 0px; background-color: rgb(0,0,0, 0.5); ">	
+					</div>
+					  
+					<div style="font-size:3vh ; padding:15px;">
+						
+						<p class="alignleft">
+							
+							<a id="laster" style="vertical-align: top; pointer-events: none; opacity: 0 ;"  href="javascript:last();">
+								<i class="far fa-arrow-alt-circle-left"></i>
+							</a>
+						</p>
+							
+						<p id="title" class="aligncenter" style="vertical-align: middle;" >c AR toons by Jack Ohman<span>
+						
+						
+						<p class="alignright">
+							<a id="nexter" style="vertical-align: top; pointer-events: auto; opacity: 1 ;"  href="javascript:next();">
+								<i class="far fa-arrow-alt-circle-right"></i>
+							</a>
+						</p>
+					</div>
+					
+				</div>
+			</div>	
+			<div style="  position: relative; top: 50%; margin:2%; transform: translateY(-50%);">
+				
+				<div id="loader" style="width:100%; font-size:5vh; text-align:center; display: inline-block;">
+					<i class="fas fa-circle-notch fa-spin" aria-hidden="true"></i><BR> Loading
+				</div>
+
+				<a id="playbutton" style="font-size:30vh; display:none;  top:15%; left:33%; position:absolute; pointer-events: auto;" href="javascript:document.getElementById('fixed-frame').play();document.getElementById('playbutton').style('display:none;');">
+					<i class="fa fa-play-circle" aria-hidden="true"></i>
+				</a>	
+			</div>
+		</div>
+	  
+	<a-scene id="scene" embedded arjs='sourceType: webcam; debugUIEnabled: false;' vr-mode-ui="enabled: false">
+		<a-assets id="assets" timeout="100000">
+					
+			<img id="sky" src="env.jpg" crossorigin="anonymous" />
+		    <a-asset-item id="Theater-obj" src="jack_assets/Theater.obj"></a-asset-item>
+			<a-asset-item id="Theater-mtl" src="jack_assets/Theater.mtl"></a-asset-item>
+			<img id="stage" src="stage.png">
+		</a-assets>
+			  	
+		<a-marker play-on-scan id="hiro" preset='hiro'>
+			<a-entity id="hiroStuff" scale="0 0 0" >
+				
+
+<!--				
+				<a-entity text="value:C    TOONS; color:#000000; shader: msdf; height:1; font:https://raw.githubusercontent.com/etiennepinchon/aframe-fonts/master/fonts/sedgwickavedisplay/SedgwickAveDisplay-Regular.json" scale="7 7 7" position="3.09 .9 .02" rotation="" visible="" material="color:#555; metalness:1; roughness: 0.0; sphericalEnvMap: #sky;"></a-entity>
+				<a-entity text="value:by; color:#000000; shader: msdf; height:1; font:https://raw.githubusercontent.com/etiennepinchon/aframe-fonts/master/fonts/sedgwickavedisplay/SedgwickAveDisplay-Regular.json" scale="3 3 3" position="1.25 .75 .02" rotation="" visible="" material="color:#555; metalness:1; roughness: 0.0; sphericalEnvMap: #sky;"></a-entity>
+
+					
+<a-entity position="-.2 1 0" scale=".125 .18 .125" text-geometry="value: AR; font: #exoFont; bevelEnabled: true; bevelSize: 0.1; bevelThickness: 0.1; curveSegments: 1; size: 1.5; height: 0.3;" material="color:#92c1fb; metalness:0.9; roughness: 0.05; sphericalEnvMap: #sky-dark;"></a-entity>
+-->
+				<a-animation id="animate_in_hiro" attribute="scale" begin="animate-in-hiro" easing="ease" fill="forwards" from="0 0 0" to="1 1 1" dur="1500"></a-animation>
+				<a-sphere id="center" material="side: back; color: #ffffff; transparent: true; opacity: 0.75"  visible="true" radius="8">
+				</a-sphere>
+					<a-entity id="stageOne" >
+						
+						<a-box scale="3 .05 2.4" position="0 0.0 0" rotation="0 0 0" src="stage.png" material="metalness:.5; roughness: 0.9; sphericalEnvMap: #sky; color:#ffffff" ></a-box>		
+						<a-box scale="1.5 .05 1.5" position="0 .05 0" rotation="0 0 0" material="metalness:.5; roughness: 0.9; sphericalEnvMap: #sky; color:#dddddd" ></a-box>
+						<a-box scale="1.4 .05 1.4" position="0 .1 0" rotation="0 0 0" material="metalness:.5; roughness: 0.9; sphericalEnvMap: #sky; color:#eeeeee" ></a-box>
+						<a-box scale="1.3 .05 1.3" position="0 .15 0" rotation="0 0 0" material="metalness:.5; roughness: 0.9; sphericalEnvMap: #sky; color:#ffffff" ></a-box>
+							</a-entity>
+			</a-entity>
+		</a-marker>
+
+
+
+ <!--		
+
+		<a-marker play-on-scan id="kanji" preset='kanji'>
+		<a-video src="#fixed-frame" width="16" height="9" position="0 1.5 -.65" scale=".13 .13 .13" ></a-video>
+		<a-entity id="Theater" obj-model="obj:#Theater-obj; mtl:#Theater-mtl;" position="" rotation="" scale=".02 .02 .02" visible=""></a-entity>
+		</a-marker>	
+
+		<!-- -->
+		<a-entity camera></a-entity> 
+	</a-scene>
+    
+   
+    
+    <script>
+	    
+	   var kanji;
+	   var begun=false;
+	    
+	   function PopUpShare(){
+		    
+		    sweetAlert('To share this specific scan copy the following URL: \n \n http://sandbox.video/epad17/?model='+(CurrentModel+1));
+		    
+	    }
+	    
+	    TargetModel = 1;
+	    CurrentModel = 0;
+	    
+	    function bookends(){
+		    
+		    if(TargetModel+1 == loopLength){
+			document.getElementById("nexter").style.opacity = "0";
+			document.getElementById("nexter").style.pointerEvents = "none";
+	       	}else if(TargetModel == 0){
+			document.getElementById("laster").style.opacity = "0";
+			document.getElementById("laster").style.pointerEvents = "none";
+		   }else{
+			document.getElementById("nexter").style.opacity = "1";
+			document.getElementById("laster").style.opacity = "1";		     
+		    document.getElementById("nexter").style.pointerEvents = "auto";
+		    document.getElementById("laster").style.pointerEvents = "auto";
+	    }
+	    }
+	    
+	    function transitionModels() {
+		    console.log('take out' + CurrentModel +'| bring in' + TargetModel);
+			document.querySelector('#model'+CurrentModel).emit('transition-out-scale');
+			document.querySelector('#model'+CurrentModel).emit('transition-out-pos');
+			document.querySelector('#model'+TargetModel).emit('transition-in-pos');
+			document.querySelector('#model'+TargetModel).emit('transition-in-scale');
+				
+				setTimeout(removeOldModel, 1500);
+				
+				function removeOldModel() {
+					document.querySelector('#model'+CurrentModel).parentNode.removeChild(document.querySelector('#model'+CurrentModel));
+				CurrentModel = TargetModel;
+
+				document.getElementById("nexter").classList.add("Use");
+				document.getElementById("laster").classList.add("Use");
+				}
+				
+				bookends();
+				
+			}
+   
+       function next() {	
+		   	
+		   	document.getElementById('loader').style.display = "inline-block";
+		   	
+		    TargetModel = CurrentModel+1;
+	       
+
+		    createAEnity(TargetModel,json);
+		    document.getElementById("mtl"+TargetModel).addEventListener("loaded", transitionModels());
+		    
+			document.getElementById("indicator"+TargetModel).classList.add("active");
+			document.getElementById("indicator"+TargetModel).classList.remove("inactive");
+
+			document.getElementById("indicator"+CurrentModel).classList.add("inactive");
+			document.getElementById("indicator"+CurrentModel).classList.remove("active");
+
+			document.getElementById("nexter").classList.remove("Use");
+			document.getElementById("laster").classList.remove("Use");			
+			document.getElementById("nexter").classList.add("dontUse");
+			document.getElementById("laster").classList.add("dontUse");
+			     	
+	    }		
+
+
+    var pos, scale, rot, title;
+       function last() {	
+	       
+	        document.getElementById('loader').style.display = "inline-block";
+	        
+		    TargetModel = CurrentModel-1;		     
+			document.getElementById("indicator"+TargetModel).classList.add("active");
+			document.getElementById("indicator"+TargetModel).classList.remove("inactive");
+
+			document.getElementById("indicator"+CurrentModel).classList.add("inactive");
+			document.getElementById("indicator"+CurrentModel).classList.remove("active");
+			
+			document.getElementById("nexter").classList.remove("Use");
+			document.getElementById("laster").classList.remove("Use");			
+			document.getElementById("nexter").classList.add("dontUse");
+			document.getElementById("laster").classList.add("dontUse");	
+
+		    createAEnity(TargetModel,json);
+		    document.getElementById("mtl"+TargetModel).addEventListener("loaded", transitionModels());
+			
+	    }	
+
+		function hideLoader(){
+			
+			document.getElementById('loader').style.display = "none";
+			
+		};
+
+		   
+	   function createAModel(TargetModel){
+
+		   document.getElementById('title').innerHTML=title;
+		   
+		   	var model = document.createElement('a-entity');
+			model.setAttribute('id', 'model'+TargetModel);
+			model.setAttribute('obj-model', 'obj: #obj'+TargetModel+'; mtl: #mtl'+TargetModel );
+			model.setAttribute('position', pos);
+			model.setAttribute('rotation', rot);
+			model.setAttribute('scale', scale );
+			model.setAttribute('do-something-once-loaded', '');
+			model.addEventListener("model-loaded", function(){ hideLoader(); });
+			
+			var animateInPos = document.createElement('a-animation');
+			animateInPos.setAttribute('id', 'animate_in_pos');
+			animateInPos.setAttribute('attribute', 'position');
+			animateInPos.setAttribute('begin', 'transition-in-pos');
+			animateInPos.setAttribute('easing', 'ease-out');
+			animateInPos.setAttribute('from', '2 1 0');
+			animateInPos.setAttribute('to', pos);
+			animateInPos.setAttribute('dur', '1500');
+
+			var animateOutPos = document.createElement('a-animation');
+			animateOutPos.setAttribute('id', 'animate_out_pos');
+			animateOutPos.setAttribute('attribute', 'position');
+			animateOutPos.setAttribute('begin', 'transition-out-pos');
+			animateOutPos.setAttribute('easing', 'ease-out');
+			animateOutPos.setAttribute('to', '-2 1 0');
+			animateOutPos.setAttribute('dur', '1500');
+
+			var animateInScale = document.createElement('a-animation');
+			animateInScale.setAttribute('id', 'animate_in_scale');
+			animateInScale.setAttribute('attribute', 'scale');
+			animateInScale.setAttribute('begin', 'transition-in-scale');
+			animateInScale.setAttribute('easing', 'ease-out');
+			animateInScale.setAttribute('to', scale);
+			animateInScale.setAttribute('dur', '1500');
+
+			var animateOutScale = document.createElement('a-animation');
+			animateOutScale.setAttribute('id', 'animate_out_scale');
+			animateOutScale.setAttribute('attribute', 'scale');
+			animateOutScale.setAttribute('begin', 'transition-out-scale');
+			animateOutScale.setAttribute('easing', 'ease-out');
+			animateOutScale.setAttribute('to', pos);
+			animateOutScale.setAttribute('dur', '1500');
+
+
+			document.getElementById('hiro').appendChild(model);
+			document.getElementById('model'+TargetModel).appendChild(animateOutPos);
+			document.getElementById('model'+TargetModel).appendChild(animateInPos);
+			document.getElementById('model'+TargetModel).appendChild(animateOutScale);
+			document.getElementById('model'+TargetModel).appendChild(animateInScale);
+
+		   
+	   }
+
+	    function createAEnity(TargetModel,json){
+
+		 	var obj = 'jack_assets/' + json[TargetModel]['fileName'] + '.obj';
+		 	var mtl = 'jack_assets/' + json[TargetModel]['mtl'] + '.mtl';
+		 	pos = json[TargetModel]['pos'];
+		 	scale = json[TargetModel]['scale'];
+		 	rot = json[TargetModel]['rot'];		
+		 	title = json[TargetModel]['title'];		 
+
+		 	var objAsset = document.createElement('a-asset-item');
+			objAsset.setAttribute('id', 'obj'+TargetModel);
+			objAsset.setAttribute('src', obj);	
+			
+			
+			var mtlAsset = document.createElement('a-asset-item');
+			mtlAsset.setAttribute('id', 'mtl'+TargetModel);
+			mtlAsset.setAttribute('src', mtl);
+			
+			document.getElementById('assets').appendChild(objAsset);
+			document.getElementById('assets').appendChild(mtlAsset);   
+			
+			createAModel(TargetModel);
+						
+	    }
+	     if (getQueryVariable('model') !== false) {
+			  var deeplink = getQueryVariable('model')-1;
+			}else{
+				var deeplink = 0;
+			} 
+			
+		CurrentModel = deeplink;
+
+		document.querySelector('a-scene').addEventListener('loaded', function () {
+			json = {};
+		    $.ajax({
+		        url: "jack.json?1=2",
+		        async: true,
+		        dataType: 'json',
+		        success: function(data) {
+		            json = data;
+					createAEnity(CurrentModel,json);	
+					loopLength = json.length;	
+			    	for ( var i = 0, l = loopLength; i < l; i++ ) {
+						var indicator = document.createElement('i');
+						indicator.setAttribute('id', 'indicator'+ i );
+						indicator.setAttribute('aria-hidden', 'true' );
+						
+						if(i == 0){
+						indicator.setAttribute('class', 'fa fa-circle active' );
+						}else{
+						indicator.setAttribute('class', 'fa fa-circle inactive' );	
+						}
+						
+						document.getElementById('progress').appendChild(indicator);
+					
+					}
+			
+		        }
+		    });
+		
+		})
+		
+
+		
+		
+		function getQueryVariable(variable)
+{
+       var query = window.location.search.substring(1);
+       var vars = query.split("&");
+       for (var i=0;i<vars.length;i++) {
+               var pair = vars[i].split("=");
+               if(pair[0] == variable){return pair[1];}
+       }
+       return(false);
+}
+
+
+var hiroLoop = 0;
+var kanjiloop= 0;
+
+			AFRAME.registerComponent('play-on-scan', {
+			  init: function () {
+			    var el = this.el;
+			    el.addEventListener('markerFound', function () {
+		//		    console.log('marker ' + el.id );
+				    
+				    if(el.id == 'hiro' && hiroLoop == 0 ){
+					    document.getElementById("galleryUI").style.display = "inline-block";
+					    hiroLoop = 1;
+					    document.getElementById('hiroStuff').emit('animate-in-hiro');
+					    begun = true;
+		//			    console.log('emitted');
+				    }
+				    
+				    kanji = true;
+				  //  console.log('kanji ' + kanji);
+				    
+				   // isPaused = document.getElementById("fixed-frame").paused;
+				    //console.log('isPaused' + isPaused );
+				    //if (kanji && isPaused){
+					if (kanji && kanjiLoop == 0  ){
+					
+							kanjiLoop = 1;
+					    	document.getElementById('animate_in_kanji-1').emit('animate-in-hiro');
+					    	document.getElementById('animate_in_kanji-2').emit('animate-in-hiro');
+						}
+			     // console.log('KANJI IS HERE');
+			    });
+			    
+			    el.addEventListener('markerGone', function () {
+				    
+				    if(el.id == 'hiro'){
+					    document.getElementById("galleryUI").style.display = "none";
+					     hiroLoop = 0;
+				    }
+
+				    if(el.id == 'kanji'){
+					   // document.getElementById("galleryUI").style.display = "none";
+					     kanjiLoop = 0;
+				    }
+				    
+			      //console.log('KANJI IS Gone');
+			        kanji = false;
+				   // console.log('kanji ' + kanji);
+			        
+			       // isPaused = document.getElementById("fixed-frame").paused;
+				   // console.log('isPaused' + isPaused );
+				    
+			        document.getElementById("playbutton").style.display = "none";
+			    });
+
+			  }
+			});
+
+
+			AFRAME.registerComponent('do-something-once-loaded', {
+			  init: function () { 
+				  // console.log('Asset says it is loaded');
+			  }
+			});
+		
+    </script>
+    <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-101348884-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+
+
+
+
+
+
+
+
+
+  <script src='https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.7/hammer.min.js'></script>
+
+    <script >
+    var sliderEl = document.querySelector( '.drag' );
+    var width = window.innerWidth;
+	var data = document.querySelector( '#data' );
+	var userRot = 0;
+	var rotMem = 0; 
+	var newRow = 0;
+	var sliderManager = new Hammer.Manager( sliderEl );
+	console.log("#model"+CurrentModel);
+
+
+	sliderManager.add( new Hammer.Pan({ threshold: 0, pointers: 0 }) );
+	sliderManager.on( 'pan', function( e ) {
+
+    userRot = Math.round(((e.deltaX) / width) * 180);
+    newRot = userRot + rotMem;
+
+    data2.innerHTML = userRot;    
+    data.innerHTML = newRot;
+
+    
+    if(begun == true){
+	    var hiroStuff = document.querySelector('#model'+CurrentModel);
+	    hiroStuff.setAttribute('rotation', '0 '+ newRot + ' 0' );
+	}
+    
+  if( e.isFinal ) {
+	rotMem =  Math.round(((e.deltaX ) / width) * 180) + rotMem;
+
+  }
+});
+    </script>
+
+
+
+
+
+  </body>
+</html>
